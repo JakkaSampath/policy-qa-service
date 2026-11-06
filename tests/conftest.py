@@ -30,6 +30,20 @@ class FakeEmbedder:
         return self._vec(text)
 
 
+class FakeLLM:
+    """Stand-in for gemma3: returns a scripted reply and records every prompt."""
+
+    def __init__(self, reply="{}"):
+        self.reply = reply
+        self.calls: list[tuple[str, str]] = []
+
+    def complete(self, system: str, user: str) -> str:
+        self.calls.append((system, user))
+        if isinstance(self.reply, Exception):
+            raise self.reply
+        return self.reply
+
+
 @pytest.fixture
 def fake_embedder() -> FakeEmbedder:
     return FakeEmbedder()
