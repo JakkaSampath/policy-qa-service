@@ -23,6 +23,9 @@ def main() -> int:
     start = time.perf_counter()
     try:
         with VectorStore(embedder, settings.index_dir, settings.collection) as store:
+            if store.count() == 0:
+                print("ERROR: The index is empty. Run: python scripts/ingest.py", file=sys.stderr)
+                return 1
             a = answer_question(question, store, llm, top_k=settings.top_k,
                                 min_similarity=settings.min_similarity)
     except RuntimeError as e:  # Ollama down/timeout, index locked, wrong embed model
