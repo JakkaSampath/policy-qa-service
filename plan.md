@@ -155,7 +155,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 0 | Ollama with `gemma3` + `embeddinggemma-2` on the laptop | ✅ Done by the user |
 | 1 | Skeleton: pyproject, config, `.env.example` | ✅ Done |
 | 2 | Chunking + tests | ✅ Done: 54 chunks, 10 tests |
-| 3 | Vector store (Qdrant) + ingest script + tests | ⚠️ Code done; dev server: 30 passed, 1 integration skipped. **Pending: laptop run of ingest + full tests.** |
+| 3 | Vector store (Qdrant) + ingest script + tests | ✅ Done: laptop ingest indexed 54 chunks; **31/31 tests pass on the laptop** (incl. real-Ollama integration) |
 | 4 | LLM, prompt, QA logic + tests | Fake-LLM tests pass for answer, refuse and bad-citation cases |
 | 5 | FastAPI + guards + API tests | All status codes are tested |
 | 6 | Eval set + runner | Eval report prints the metrics; threshold is tuned |
