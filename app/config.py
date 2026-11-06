@@ -15,7 +15,7 @@ class Settings(BaseSettings):
 
     # Data
     docs_dir: Path = ROOT / "mock-policies"
-    chroma_dir: Path = ROOT / "data" / "chroma"
+    index_dir: Path = ROOT / "data" / "qdrant"
     collection: str = "policies"
 
     # Retrieval

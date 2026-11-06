@@ -36,8 +36,9 @@ def fake_embedder() -> FakeEmbedder:
 
 
 @pytest.fixture
-def store(tmp_path, fake_embedder) -> VectorStore:
-    return VectorStore(fake_embedder, tmp_path / "chroma", "test-policies")
+def store(tmp_path, fake_embedder):
+    with VectorStore(fake_embedder, tmp_path / "index", "test-policies") as s:
+        yield s
 
 
 @pytest.fixture(scope="session")

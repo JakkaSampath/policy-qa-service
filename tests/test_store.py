@@ -19,8 +19,16 @@ def test_rebuild_twice_does_not_duplicate(store, chunks):
 
 
 def test_index_persists_across_instances(tmp_path, fake_embedder, chunks):
-    VectorStore(fake_embedder, tmp_path, "test-policies").rebuild(chunks)
-    assert VectorStore(fake_embedder, tmp_path, "test-policies").count() == 54
+    with VectorStore(fake_embedder, tmp_path, "test-policies") as s:
+        s.rebuild(chunks)
+    with VectorStore(fake_embedder, tmp_path, "test-policies") as s:
+        assert s.count() == 54
+
+
+def test_second_open_of_same_folder_is_refused(tmp_path, fake_embedder):
+    with VectorStore(fake_embedder, tmp_path, "test-policies"):
+        with pytest.raises(RuntimeError, match="already accessed"):
+            VectorStore(fake_embedder, tmp_path, "test-policies")
 
 
 def test_failed_rebuild_keeps_old_index(store, chunks):
@@ -79,13 +87,15 @@ def test_index_records_embedding_model(store, chunks):
 
 
 def test_search_refuses_index_built_with_other_model(tmp_path, fake_embedder, chunks):
-    VectorStore(fake_embedder, tmp_path, "test-policies").rebuild(chunks)
+    with VectorStore(fake_embedder, tmp_path, "test-policies") as s:
+        s.rebuild(chunks)
 
     class OtherModel(type(fake_embedder)):
         model = "embeddinggemma-2"
 
-    with pytest.raises(IndexMismatchError, match="ingest"):
-        VectorStore(OtherModel(), tmp_path, "test-policies").search("sick leave", k=1)
+    with VectorStore(OtherModel(), tmp_path, "test-policies") as s:
+        with pytest.raises(IndexMismatchError, match="ingest"):
+            s.search("sick leave", k=1)
 
 
 # ---- Ollama client (mocked HTTP) ----
@@ -134,8 +144,8 @@ def test_ollama_failures_become_embedding_error(handler):
 
 @pytest.mark.integration
 def test_real_ollama_finds_mileage_section(tmp_path, chunks):
-    store = VectorStore(OllamaEmbedder(settings.ollama_url, settings.embed_model),
-                        tmp_path, "it-policies")
-    store.rebuild(chunks)
-    top = store.search("How much do I get reimbursed per mile?", k=1)[0].chunk
+    with VectorStore(OllamaEmbedder(settings.ollama_url, settings.embed_model),
+                     tmp_path, "it-policies") as store:
+        store.rebuild(chunks)
+        top = store.search("How much do I get reimbursed per mile?", k=1)[0].chunk
     assert (top.file, top.section) == ("expense-policy.md", "Mileage Reimbursement")

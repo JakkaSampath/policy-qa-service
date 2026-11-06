@@ -1,12 +1,13 @@
-"""Vector store: embeds chunks with Ollama and searches them in ChromaDB."""
+"""Vector store: embeds chunks with Ollama and searches them in Qdrant (local mode)."""
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-import chromadb
 import httpx
+from qdrant_client import QdrantClient, models
 
 from app.chunking import Chunk
 
@@ -73,61 +74,84 @@ class Hit:
     similarity: float  # cosine similarity: 1.0 = same meaning, 0 = unrelated
 
 
+def _point_id(chunk_id: str) -> str:
+    """Qdrant needs integer or UUID ids; derive a stable UUID from the chunk id."""
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, chunk_id))
+
+
 class VectorStore:
+    """Qdrant in local mode: plain Python, saves to a folder, no server.
+
+    Only one VectorStore may have the folder open at a time; call close()
+    (or use `with VectorStore(...) as store:`) when done.
+    """
+
     def __init__(self, embedder: Embedder, path: Path, collection: str):
         self.embedder = embedder
-        self._client = chromadb.PersistentClient(path=str(path))
         self._name = collection
-        self._col = self._open()
+        self._client = QdrantClient(path=str(path))
 
-    def _open(self, metadata: dict | None = None):
-        # embedding_function=None: we always pass vectors ourselves, so Chroma
-        # must never download or use its own default model.
-        return self._client.get_or_create_collection(
-            self._name, embedding_function=None, metadata=metadata,
-            configuration={"hnsw": {"space": "cosine"}},
-        )
+    def close(self) -> None:
+        self._client.close()
+
+    def __enter__(self) -> "VectorStore":
+        return self
+
+    def __exit__(self, *exc) -> None:
+        self.close()
 
     def rebuild(self, chunks: list[Chunk]) -> int:
         """Replace the whole index with these chunks. Safe to run repeatedly."""
         # Embed first: if Ollama fails here, the existing index is untouched.
-        vectors = self.embedder.embed_documents([c.embed_text for c in chunks])
-        self._client.delete_collection(self._name)
-        self._col = self._open(metadata={"embed_model": self.embedder.model})
-        if chunks:
-            self._col.add(
-                ids=[c.id for c in chunks],
-                embeddings=vectors,
-                documents=[c.text for c in chunks],
-                metadatas=[{"file": c.file, "title": c.title, "section": c.section}
-                           for c in chunks],
+        vectors = self.embedder.embed_documents([c.embed_text for c in chunks]) if chunks else []
+        if self._client.collection_exists(self._name):
+            self._client.delete_collection(self._name)
+        if not chunks:
+            return 0
+        self._client.create_collection(
+            self._name,
+            vectors_config=models.VectorParams(size=len(vectors[0]),
+                                               distance=models.Distance.COSINE),
+        )
+        self._client.upsert(self._name, points=[
+            models.PointStruct(
+                id=_point_id(c.id),
+                vector=v,
+                payload={"chunk_id": c.id, "file": c.file, "title": c.title,
+                         "section": c.section, "text": c.text,
+                         "embed_model": self.embedder.model},
             )
-        return self._col.count()
+            for c, v in zip(chunks, vectors)
+        ])
+        return self.count()
 
     def count(self) -> int:
-        return self._col.count()
+        if not self._client.collection_exists(self._name):
+            return 0
+        return self._client.count(self._name).count
 
     def built_with(self) -> str | None:
-        """Embedding model the current index was built with (None if never built)."""
-        return (self._col.metadata or {}).get("embed_model")
+        """Embedding model the current index was built with (None if empty)."""
+        if self.count() == 0:
+            return None
+        points, _ = self._client.scroll(self._name, limit=1, with_payload=["embed_model"])
+        return points[0].payload.get("embed_model")
 
     def search(self, question: str, k: int) -> list[Hit]:
         """Top-k most similar chunks, best first. Empty index -> []."""
-        n = self.count()
-        if n == 0:
+        if self.count() == 0:
             return []
         built = self.built_with()
         if built != self.embedder.model:
             raise IndexMismatchError(
                 f"Index was built with '{built}' but EMBED_MODEL is "
                 f"'{self.embedder.model}'. Run: python scripts/ingest.py")
-        r = self._col.query(
-            query_embeddings=[self.embedder.embed_query(question)],
-            n_results=min(k, n),
-            include=["documents", "metadatas", "distances"],
-        )
+        points = self._client.query_points(
+            self._name, query=self.embedder.embed_query(question),
+            limit=k, with_payload=True,
+        ).points
         return [
-            Hit(Chunk(cid, m["file"], m["title"], m["section"], doc), round(1.0 - dist, 4))
-            for cid, doc, m, dist in zip(
-                r["ids"][0], r["documents"][0], r["metadatas"][0], r["distances"][0])
+            Hit(Chunk(p.payload["chunk_id"], p.payload["file"], p.payload["title"],
+                      p.payload["section"], p.payload["text"]), round(p.score, 4))
+            for p in points
         ]

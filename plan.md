@@ -1,10 +1,10 @@
-# Plan: Policy Q&A Service (RAG API with Ollama + ChromaDB)
+# Plan: Policy Q&A Service (RAG API with Ollama + Qdrant)
 
 ## 1. Goal
 An HTTP service that answers questions using only the 6 policy docs in `mock-policies/`. Every answer cites its file and section, and the service refuses when the docs don't cover the question. It ships with tests, a way to measure answer quality, and protection against abuse.
 
 This is a **grounded RAG API**:
-- **Retrieval:** it finds the relevant policy sections in ChromaDB.
+- **Retrieval:** it finds the relevant policy sections in Qdrant.
 - **Augmented:** it puts those sections into the prompt.
 - **Generation:** Ollama writes the answer from them.
 - **API:** it's exposed over HTTP (`POST /ask`).
@@ -22,7 +22,7 @@ This is a **grounded RAG API**:
 |---|---|
 | Language | Python 3.11+ |
 | API | FastAPI + Uvicorn |
-| Vector DB | ChromaDB 1.x (runs inside the app, saves to `./data/chroma`) |
+| Vector DB | Qdrant, local mode (`qdrant-client`: runs inside the app, saves to `./data/qdrant`, no server) |
 | Embeddings | Ollama `embeddinggemma-2` |
 | LLM | Ollama `gemma3` |
 | Tests | pytest |
@@ -32,12 +32,12 @@ This is a **grounded RAG API**:
 
 ```
                  ┌──────────── INGEST (run once / on doc change) ────────────┐
-mock-policies/*.md ─► split by ## section ─► embed (Ollama) ─► store in ChromaDB
+mock-policies/*.md ─► split by ## section ─► embed (Ollama) ─► store in Qdrant  
                                                                    (text + file + section,
                                                                     + which embed model)
 
                  ┌──────────────────── QUERY (POST /ask) ────────────────────┐
-question ─► validate ─► rate limit ─► cache? ─► embed ─► ChromaDB top-k
+question ─► validate ─► rate limit ─► cache? ─► embed ─► Qdrant top-k
          ─► best similarity < threshold? ──yes──► REFUSE (no LLM call)
                      │ no
                      ▼
@@ -56,7 +56,7 @@ policy-qa-service/
 ├── app/
 │   ├── config.py             # settings from env / .env
 │   ├── chunking.py           # md → sections
-│   ├── store.py              # ChromaDB + embeddings
+│   ├── store.py              # Qdrant + embeddings
 │   ├── llm.py                # Ollama client, prompt, JSON parsing
 │   ├── qa.py                 # retrieve → decide → answer → verify
 │   ├── guards.py             # rate limit, concurrency, cache
@@ -155,7 +155,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 0 | Ollama with `gemma3` + `embeddinggemma-2` on the laptop | ✅ Done by the user |
 | 1 | Skeleton: pyproject, config, `.env.example` | ✅ Done |
 | 2 | Chunking + tests | ✅ Done: 54 chunks, 10 tests |
-| 3 | ChromaDB store + ingest script + tests | ✅ Done: code and tests pass (29 passed, 1 integration skipped on the dev server). **Laptop: run ingest + integration test.** |
+| 3 | Vector store (Qdrant) + ingest script + tests | ⚠️ Code done; dev server: 30 passed, 1 integration skipped. **Pending: laptop run of ingest + full tests.** |
 | 4 | LLM, prompt, QA logic + tests | Fake-LLM tests pass for answer, refuse and bad-citation cases |
 | 5 | FastAPI + guards + API tests | All status codes are tested |
 | 6 | Eval set + runner | Eval report prints the metrics; threshold is tuned |
@@ -164,7 +164,8 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 ### Step 3 notes
 - Each embedding model has its own task prefixes. For `embeddinggemma`: `task: search result | query: …` for questions, `title: none | text: …` for sections. They're picked automatically by model name in `app/store.py`.
 - The index records which embedding model built it. If `EMBED_MODEL` changes, search raises a clear "run scripts/ingest.py" error instead of silently returning wrong results.
-- After re-running ingest, restart the API so it picks up the new index. Don't run 2 ingests at once.
+- **Only one process can open the index folder at a time** (Qdrant local mode locks it). Stop the API before running ingest; a second open gives a clear "already accessed" error. Code must close the store (`with VectorStore(...) as store:`).
+- **Why Qdrant and not ChromaDB:** ChromaDB 1.x's native (Rust) core crashed with an access violation on the first `add` on a Windows laptop whose Visual C++ runtime (`msvcp140.dll` 14.13, from 2017) is too old (known issue: chroma-core/chroma #6052, #4399). Updating the runtime needed admin rights. ChromaDB's Python fallback needs `chroma-hnswlib`, which has no Windows build for Python 3.12. Qdrant local mode is plain Python, and its native dependencies (`numpy` ships its own runtime, `grpcio` has it built in) don't use the system's `msvcp140.dll`.
 
 ## 13. Known risks / open items
 - **The threshold must be re-measured with `embeddinggemma-2`.** The first measurement used nomic: answerable questions scored 0.75–0.86 and unanswerable ones 0.49–0.70, which suggested about 0.65. Those numbers don't carry over to a different embedding model. The `min_similarity` default (0.5) is a placeholder until step 6.
