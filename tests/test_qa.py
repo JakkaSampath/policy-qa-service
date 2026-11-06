@@ -40,6 +40,18 @@ def test_tolerates_code_fences_and_messy_labels(indexed):
     assert a.answered and len(a.citations) == 1
 
 
+@pytest.mark.parametrize("text", [
+    "It is $0.67 per mile. S1",
+    "It is $0.67 per mile. [S1]",
+    "It is $0.67 per mile [S1][S2].",
+])
+def test_source_labels_are_removed_from_answer_text(indexed, text):
+    a = ask(indexed, FakeLLM(reply(answer=text)))
+    assert a.answered
+    assert "S1" not in a.answer and "S2" not in a.answer
+    assert a.answer.startswith("It is $0.67 per mile")
+
+
 # ---- layer 1: retrieval gate ----
 
 def test_below_threshold_refuses_without_calling_llm(indexed):

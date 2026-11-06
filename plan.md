@@ -156,10 +156,15 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 1 | Skeleton: pyproject, config, `.env.example` | ✅ Done |
 | 2 | Chunking + tests | ✅ Done: 54 chunks, 10 tests |
 | 3 | Vector store (Qdrant) + ingest script + tests | ✅ Done: laptop ingest indexed 54 chunks; **31/31 tests pass on the laptop** (incl. real-Ollama integration) |
-| 4 | LLM, prompt, QA logic + tests | Fake-LLM tests pass for answer, refuse and bad-citation cases |
+| 4 | LLM, prompt, QA logic + tests | ✅ Done: 54/54 tests pass on the laptop (incl. 3 real-Ollama); `scripts/ask.py` answers and refuses correctly |
 | 5 | FastAPI + guards + API tests | All status codes are tested |
 | 6 | Eval set + runner | Eval report prints the metrics; threshold is tuned |
 | 7 | README (tester handbook) + Docker Compose | A tester can run it from the README alone |
+
+### Step 4 notes
+- Sources are sent to gemma3 labelled S1, S2, …; it must reply in a fixed JSON shape (Ollama structured output) and cite labels. Citations are verified against the labels given; leftover labels in the answer text are removed.
+- Every result has a `reason`: `answered`, `no_relevant_docs`, `model_refused`, `bad_citation`, `bad_llm_output`.
+- `scripts/ask.py "question"` asks one question from the terminal (no API needed).
 
 ### Step 3 notes
 - Each embedding model has its own task prefixes. For `embeddinggemma`: `task: search result | query: …` for questions, `title: none | text: …` for sections. They're picked automatically by model name in `app/store.py`.
@@ -168,9 +173,9 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 - **Why Qdrant and not ChromaDB:** ChromaDB 1.x's native (Rust) core crashed with an access violation on the first `add` on a Windows laptop whose Visual C++ runtime (`msvcp140.dll` 14.13, from 2017) is too old (known issue: chroma-core/chroma #6052, #4399). Updating the runtime needed admin rights. ChromaDB's Python fallback needs `chroma-hnswlib`, which has no Windows build for Python 3.12. Qdrant local mode is plain Python, and its native dependencies (`numpy` ships its own runtime, `grpcio` has it built in) don't use the system's `msvcp140.dll`.
 
 ## 13. Known risks / open items
-- **The threshold must be re-measured with `embeddinggemma-2`.** The first measurement used nomic: answerable questions scored 0.75–0.86 and unanswerable ones 0.49–0.70, which suggested about 0.65. Those numbers don't carry over to a different embedding model. The `min_similarity` default (0.5) is a placeholder until step 6.
+- **Threshold (first `embeddinggemma-2` numbers, laptop, 4 questions):** answerable 0.817–0.834; unanswerable 0.591 (cafeteria) and 0.680 (dress code). At the 0.5 placeholder, both unanswerable questions reached gemma3 and were refused by the model (`model_refused`, ~13 s each). A threshold around 0.70 would refuse them instantly. Tune in step 6 with the full question set.
 - **Near misses get past the threshold.** "What is the dress code?" scored close to answerable questions (it sounds like the Code of Conduct), so the LLM has to refuse it. That's covered by layers 2–3 and by the eval.
-- **Speed depends on the laptop.** `gemma3` speed hasn't been measured yet. The 30-second timeout and the concurrency limit of 2 may need tuning after step 4.
+- **Speed (laptop):** 11–18 s per answered question, ~13 s per model refusal; the full test suite takes ~83 s. That's under the 30-second timeout for one request at a time; concurrent requests will be slower, so step 5's concurrency limit (2) and `503 busy` response matter.
 - **A small model can be sloppy with JSON or citations.** The parser and citation check handle this, and the eval will show how often it happens.
 - **Store calls are blocking.** Step 5 must run them in a thread pool so one slow call doesn't freeze the API.
 - **Rebuild isn't atomic.** It deletes the index, then re-adds everything (see the step 3 notes).
