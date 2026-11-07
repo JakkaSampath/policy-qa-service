@@ -79,8 +79,8 @@ def test_only_sources_above_threshold_are_sent(indexed):
     ask(indexed, llm, min_similarity=cutoff)
     system, user = llm.calls[0]
     assert system == SYSTEM_PROMPT
-    assert user.startswith("Sources:\n\n[S1] expense-policy.md > Mileage Reimbursement"
-                           " (Expense and Reimbursement Policy)\n")
+    assert user.startswith("Sources:\n\n[S1] Expense and Reimbursement Policy > Mileage Reimbursement"
+                           "  (file: expense-policy.md)\n")
     assert f"[S{n}]" in user and f"[S{n + 1}]" not in user
 
 

@@ -26,6 +26,7 @@ Rules:
 5. Keep the answer short: 1-3 sentences.
 6. State facts exactly as the source says. Do not add conditions or groups (such as "full-time") that the source does not state.
 7. A source that says something is excluded, not allowed, or allowed only with an exception DOES answer the question.
+8. If the question is about a specific policy, use only sources from that policy.
 
 Reply with JSON only: {"answered": true or false, "answer": "...", "citations": ["S1", ...]}"""
 
@@ -52,7 +53,7 @@ def _refuse(reason: str, top: float | None) -> Answer:
 
 def build_user_prompt(question: str, hits: list[Hit]) -> str:
     sources = "\n\n".join(
-        f"[S{i}] {h.chunk.file} > {h.chunk.section} ({h.chunk.title})\n{h.chunk.text}"
+        f"[S{i}] {h.chunk.title} > {h.chunk.section}  (file: {h.chunk.file})\n{h.chunk.text}"
         for i, h in enumerate(hits, 1))
     return f"Sources:\n\n{sources}\n\nQuestion:\n<question>\n{question}\n</question>"
 

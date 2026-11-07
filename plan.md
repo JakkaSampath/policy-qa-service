@@ -171,6 +171,8 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 - **Fixes:** prompt rules 6 (no added conditions) and 7 (exclusions count as answers); the source header now includes the document title; label cleanup removes "according to S1", "(see S1)" and "(S1, S2)" as whole phrases.
 - **Threshold:** 0.50–0.725 all scored the same; above 0.75 good questions get refused. Set `MIN_SIMILARITY=0.625` (middle; skips the LLM for ~15% of questions). Lowest answerable top similarity 0.731, highest unanswerable 0.770 (part-time), so the gate can't separate them alone. The model (layer 2) does the rest.
 - `LLM_TIMEOUT_S` 60 → 90: the slowest eval question took 55 s on the laptop CPU.
+- **Run 2 (threshold 0.625):** 33/34, refusal accuracy 100%, 0 false answers, p50 15.9 s / p95 28.1 s. a03 and a20 fixed.
+- a18 still cited the leave policy's date. A retrieval check showed the expense "Document Info" was ranked #1 (0.857), so the model mixed up two near-identical date blocks. Fix: the source header now starts with the policy name (`[S1] Expense and Reimbursement Policy > Document Info  (file: expense-policy.md)`), plus prompt rule 8 (a question about a specific policy uses only that policy's sources).
 
 ### Step 5 notes
 - Run: `.venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000` (Linux/macOS: `.venv/bin/uvicorn`). Try it at `http://127.0.0.1:8000/docs`.
