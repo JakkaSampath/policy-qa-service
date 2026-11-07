@@ -26,7 +26,7 @@ This is a **grounded RAG API**:
 | Embeddings | Ollama `embeddinggemma-2` |
 | LLM | Ollama `gemma3` |
 | Tests | pytest |
-| Packaging | `pyproject.toml`, Docker Compose |
+| Packaging | `pyproject.toml` (Docker dropped: not needed for testers) |
 
 ## 4. Architecture
 
@@ -63,12 +63,11 @@ policy-qa-service/
 │   └── main.py               # FastAPI routes
 ├── scripts/ingest.py         # build the vector index
 ├── eval/
-│   ├── questions.jsonl       # ~30 labeled questions
+│   ├── questions.jsonl       # 34 labeled questions
 │   └── run_eval.py           # scores quality
 ├── tests/                    # pytest (fake LLM + fake embeddings)
 ├── .env.example
-├── Dockerfile, docker-compose.yml
-└── README.md                 # tester handbook
+└── README.md                 # tester handbook (Windows, no Docker)
 ```
 
 ## 6. API contract
@@ -105,7 +104,7 @@ Ollama is local and free, so abuse threatens the laptop's CPU/GPU rather than a 
 | Huge input | Body over ~2.5 KB rejected with `413` before it's read; question max 500 characters (`422`) |
 | Spam | Rate limit per IP (for example 10 requests per minute) |
 | CPU overload | 1 answer at a time (`MAX_CONCURRENT_LLM`); extra requests get `503` + `Retry-After: 5`, not queued |
-| Slow or hung Ollama | 60-second LLM timeout (`504`), 60-second embedding timeout; documents embedded in batches of 16 |
+| Slow or hung Ollama | 90-second LLM timeout (`504`), 60-second embedding timeout; documents embedded in batches of 16 |
 | Long output | `num_predict` cap of about 300 tokens |
 | Repeated questions | Cache answers in memory, keyed by the normalized question |
 | Prompt injection ("ignore instructions…") | System prompt plus the citation check; the eval includes injection cases |
@@ -159,7 +158,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 4 | LLM, prompt, QA logic + tests | ✅ Done: 54/54 tests pass on the laptop (incl. 3 real-Ollama); `scripts/ask.py` answers and refuses correctly |
 | 5 | FastAPI + guards + API tests | ✅ Done: **91/91 tests pass on the laptop**; real API checked (`/health` ok, answer in 27.7 s, repeat served from cache) |
 | 6 | Eval set + runner | ✅ Done: **114/114 tests pass on the laptop**; eval 33/34, refusal accuracy 100%, **0 false answers**; `MIN_SIMILARITY=0.625` |
-| 7 | README (tester handbook) + Docker Compose | A tester can run it from the README alone |
+| 7 | README (tester handbook) | 🔄 README written; Docker dropped by decision. Checks: fast tests pass, every command in the README exists |
 
 ### Step 6 notes
 - `eval/questions.jsonl`: 34 labelled questions (20 answerable, 7 out of scope, 7 tricky). Run: `.venv/Scripts/python eval/run_eval.py` (`--ids a01,t03` for a few). The API must be stopped. The report is saved to `eval/results/` (not in git).
