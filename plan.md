@@ -158,7 +158,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 3 | Vector store (Qdrant) + ingest script + tests | ✅ Done: laptop ingest indexed 54 chunks; **31/31 tests pass on the laptop** (incl. real-Ollama integration) |
 | 4 | LLM, prompt, QA logic + tests | ✅ Done: 54/54 tests pass on the laptop (incl. 3 real-Ollama); `scripts/ask.py` answers and refuses correctly |
 | 5 | FastAPI + guards + API tests | ✅ Done: **91/91 tests pass on the laptop**; real API checked (`/health` ok, answer in 27.7 s, repeat served from cache) |
-| 6 | Eval set + runner | 🔄 Baseline 31/34, 0 false answers; fixes + threshold 0.625 being re-checked on the laptop |
+| 6 | Eval set + runner | ✅ Done: **114/114 tests pass on the laptop**; eval 33/34, refusal accuracy 100%, **0 false answers**; `MIN_SIMILARITY=0.625` |
 | 7 | README (tester handbook) + Docker Compose | A tester can run it from the README alone |
 
 ### Step 6 notes
@@ -173,6 +173,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 - `LLM_TIMEOUT_S` 60 → 90: the slowest eval question took 55 s on the laptop CPU.
 - **Run 2 (threshold 0.625):** 33/34, refusal accuracy 100%, 0 false answers, p50 15.9 s / p95 28.1 s. a03 and a20 fixed.
 - a18 still cited the leave policy's date. A retrieval check showed the expense "Document Info" was ranked #1 (0.857), so the model mixed up two near-identical date blocks. Fix: the source header now starts with the policy name (`[S1] Expense and Reimbursement Policy > Document Info  (file: expense-policy.md)`), plus prompt rule 8 (a question about a specific policy uses only that policy's sources).
+- **Final (laptop, commit 3800fba):** 114/114 tests pass; eval **33/34**, refusal accuracy 100%, 0 false answers, 0 wrongly refused. a18 still fails: a **known limit** of gemma3 (see section 13).
 
 ### Step 5 notes
 - Run: `.venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000` (Linux/macOS: `.venv/bin/uvicorn`). Try it at `http://127.0.0.1:8000/docs`.
@@ -194,6 +195,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 - **Why Qdrant and not ChromaDB:** ChromaDB 1.x's native (Rust) core crashed with an access violation on the first `add` on a Windows laptop whose Visual C++ runtime (`msvcp140.dll` 14.13, from 2017) is too old (known issue: chroma-core/chroma #6052, #4399). Updating the runtime needed admin rights. ChromaDB's Python fallback needs `chroma-hnswlib`, which has no Windows build for Python 3.12. Qdrant local mode is plain Python, and its native dependencies (`numpy` ships its own runtime, `grpcio` has it built in) don't use the system's `msvcp140.dll`.
 
 ## 13. Known risks / open items
+- **Known limit (eval a18): near-identical metadata blocks.** Asked when the expense policy was last updated, gemma3 answers with the leave policy's date ("September 2026" instead of "July 2026") and cites the leave policy, although the search ranks the expense policy's "Document Info" first (0.857 vs 0.767). The header and prompt fixes in step 6 didn't change it. It's a wrong-citation error inside the docs, not an outside-knowledge answer. The eval keeps checking it, so a stronger model or a later fix can be measured against it.
 - **Threshold (first `embeddinggemma-2` numbers, laptop, 4 questions):** answerable 0.817–0.834; unanswerable 0.591 (cafeteria) and 0.680 (dress code). At the 0.5 placeholder, both unanswerable questions reached gemma3 and were refused by the model (`model_refused`, ~13 s each). A threshold around 0.70 would refuse them instantly. **Tuned in step 6: 0.625** (see the step 6 notes).
 - **Near misses get past the threshold.** "What is the dress code?" scored close to answerable questions (it sounds like the Code of Conduct), so the LLM has to refuse it. That's covered by layers 2–3 and by the eval.
 - **Speed (laptop):** 11–18 s per answered question, ~13 s per model refusal; the full test suite takes ~83 s. A first answer after a model load took 27.7 s through the API, which is why the timeouts are 60 s and only 1 answer runs at a time (a GPU machine can raise both in `.env`).
