@@ -158,8 +158,19 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 3 | Vector store (Qdrant) + ingest script + tests | ✅ Done: laptop ingest indexed 54 chunks; **31/31 tests pass on the laptop** (incl. real-Ollama integration) |
 | 4 | LLM, prompt, QA logic + tests | ✅ Done: 54/54 tests pass on the laptop (incl. 3 real-Ollama); `scripts/ask.py` answers and refuses correctly |
 | 5 | FastAPI + guards + API tests | ✅ Done: **91/91 tests pass on the laptop**; real API checked (`/health` ok, answer in 27.7 s, repeat served from cache) |
-| 6 | Eval set + runner | Eval report prints the metrics; threshold is tuned |
+| 6 | Eval set + runner | 🔄 Baseline 31/34, 0 false answers; fixes + threshold 0.625 being re-checked on the laptop |
 | 7 | README (tester handbook) + Docker Compose | A tester can run it from the README alone |
+
+### Step 6 notes
+- `eval/questions.jsonl`: 34 labelled questions (20 answerable, 7 out of scope, 7 tricky). Run: `.venv/Scripts/python eval/run_eval.py` (`--ids a01,t03` for a few). The API must be stopped. The report is saved to `eval/results/` (not in git).
+- Each question runs once with the gate off; the threshold sweep is applied afterwards (an estimate).
+- **Baseline (laptop, 2026-11-07, MIN_SIMILARITY=0.5):** 31/34 passed, **0 false answers**, refusal accuracy 97%, citation accuracy 96%, answer correctness 91%, latency p50 19.3 s / p95 33.9 s (slowest 54.9 s).
+  - a03: added "full-time" (not in Sick Leave) and left "according to." after label removal.
+  - a18: cited the leave policy's "Document Info" for the expense policy date (every doc has a section with that name).
+  - a20: refused the alcohol question, which is answered by an exclusion list.
+- **Fixes:** prompt rules 6 (no added conditions) and 7 (exclusions count as answers); the source header now includes the document title; label cleanup removes "according to S1", "(see S1)" and "(S1, S2)" as whole phrases.
+- **Threshold:** 0.50–0.725 all scored the same; above 0.75 good questions get refused. Set `MIN_SIMILARITY=0.625` (middle; skips the LLM for ~15% of questions). Lowest answerable top similarity 0.731, highest unanswerable 0.770 (part-time), so the gate can't separate them alone. The model (layer 2) does the rest.
+- `LLM_TIMEOUT_S` 60 → 90: the slowest eval question took 55 s on the laptop CPU.
 
 ### Step 5 notes
 - Run: `.venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000` (Linux/macOS: `.venv/bin/uvicorn`). Try it at `http://127.0.0.1:8000/docs`.
@@ -181,7 +192,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 - **Why Qdrant and not ChromaDB:** ChromaDB 1.x's native (Rust) core crashed with an access violation on the first `add` on a Windows laptop whose Visual C++ runtime (`msvcp140.dll` 14.13, from 2017) is too old (known issue: chroma-core/chroma #6052, #4399). Updating the runtime needed admin rights. ChromaDB's Python fallback needs `chroma-hnswlib`, which has no Windows build for Python 3.12. Qdrant local mode is plain Python, and its native dependencies (`numpy` ships its own runtime, `grpcio` has it built in) don't use the system's `msvcp140.dll`.
 
 ## 13. Known risks / open items
-- **Threshold (first `embeddinggemma-2` numbers, laptop, 4 questions):** answerable 0.817–0.834; unanswerable 0.591 (cafeteria) and 0.680 (dress code). At the 0.5 placeholder, both unanswerable questions reached gemma3 and were refused by the model (`model_refused`, ~13 s each). A threshold around 0.70 would refuse them instantly. Tune in step 6 with the full question set.
+- **Threshold (first `embeddinggemma-2` numbers, laptop, 4 questions):** answerable 0.817–0.834; unanswerable 0.591 (cafeteria) and 0.680 (dress code). At the 0.5 placeholder, both unanswerable questions reached gemma3 and were refused by the model (`model_refused`, ~13 s each). A threshold around 0.70 would refuse them instantly. **Tuned in step 6: 0.625** (see the step 6 notes).
 - **Near misses get past the threshold.** "What is the dress code?" scored close to answerable questions (it sounds like the Code of Conduct), so the LLM has to refuse it. That's covered by layers 2–3 and by the eval.
 - **Speed (laptop):** 11–18 s per answered question, ~13 s per model refusal; the full test suite takes ~83 s. A first answer after a model load took 27.7 s through the API, which is why the timeouts are 60 s and only 1 answer runs at a time (a GPU machine can raise both in `.env`).
 - **A small model can be sloppy with JSON or citations.** The parser and citation check handle this, and the eval will show how often it happens.

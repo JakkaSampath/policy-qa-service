@@ -40,16 +40,19 @@ def test_tolerates_code_fences_and_messy_labels(indexed):
     assert a.answered and len(a.citations) == 1
 
 
-@pytest.mark.parametrize("text", [
-    "It is $0.67 per mile. S1",
-    "It is $0.67 per mile. [S1]",
-    "It is $0.67 per mile [S1][S2].",
+@pytest.mark.parametrize("text, expected", [
+    ("It is $0.67 per mile. S1", "It is $0.67 per mile."),
+    ("It is $0.67 per mile. [S1]", "It is $0.67 per mile."),
+    ("It is $0.67 per mile [S1][S2].", "It is $0.67 per mile."),
+    ("It is $0.67 per mile according to S1.", "It is $0.67 per mile."),
+    ("It is $0.67 per mile (see S1).", "It is $0.67 per mile."),
+    ("It is $0.67 per mile (S1, S2).", "It is $0.67 per mile."),
+    ("As stated in S1, it is $0.67 per mile.", "It is $0.67 per mile."),
+    ("See Section 5 in S1: $0.67 per mile.", "See Section 5: $0.67 per mile."),
 ])
-def test_source_labels_are_removed_from_answer_text(indexed, text):
+def test_source_labels_are_removed_from_answer_text(indexed, text, expected):
     a = ask(indexed, FakeLLM(reply(answer=text)))
-    assert a.answered
-    assert "S1" not in a.answer and "S2" not in a.answer
-    assert a.answer.startswith("It is $0.67 per mile")
+    assert (a.answered, a.answer) == (True, expected)
 
 
 # ---- layer 1: retrieval gate ----
@@ -76,7 +79,8 @@ def test_only_sources_above_threshold_are_sent(indexed):
     ask(indexed, llm, min_similarity=cutoff)
     system, user = llm.calls[0]
     assert system == SYSTEM_PROMPT
-    assert user.startswith("Sources:\n\n[S1] expense-policy.md > Mileage Reimbursement")
+    assert user.startswith("Sources:\n\n[S1] expense-policy.md > Mileage Reimbursement"
+                           " (Expense and Reimbursement Policy)\n")
     assert f"[S{n}]" in user and f"[S{n + 1}]" not in user
 
 
