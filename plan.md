@@ -26,7 +26,7 @@ This is a **grounded RAG API**:
 | Embeddings | Ollama `embeddinggemma-2` |
 | LLM | Ollama `gemma3` |
 | Tests | pytest |
-| Packaging | `pyproject.toml` (Docker dropped: not needed for testers) |
+| Packaging | `pyproject.toml` |
 
 ## 4. Architecture
 
@@ -67,7 +67,7 @@ policy-qa-service/
 │   └── run_eval.py           # scores quality
 ├── tests/                    # pytest (fake LLM + fake embeddings)
 ├── .env.example
-└── README.md                 # tester handbook (Windows, no Docker)
+└── README.md                 # tester handbook
 ```
 
 ## 6. API contract
@@ -158,7 +158,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 4 | LLM, prompt, QA logic + tests | ✅ Done: 54/54 tests pass on the laptop (incl. 3 real-Ollama); `scripts/ask.py` answers and refuses correctly |
 | 5 | FastAPI + guards + API tests | ✅ Done: **91/91 tests pass on the laptop**; real API checked (`/health` ok, answer in 27.7 s, repeat served from cache) |
 | 6 | Eval set + runner | ✅ Done: **114/114 tests pass on the laptop**; eval 33/34, refusal accuracy 100%, **0 false answers**; `MIN_SIMILARITY=0.625` |
-| 7 | README (tester handbook) | 🔄 README written; Docker dropped by decision. Checks: fast tests pass, every command in the README exists |
+| 7 | README (tester handbook) | 🔄 README written; a tester can run it from the README alone (to verify on the laptop) |
 
 ### Step 6 notes
 - `eval/questions.jsonl`: 34 labelled questions (20 answerable, 7 out of scope, 7 tricky). Run: `.venv/Scripts/python eval/run_eval.py` (`--ids a01,t03` for a few). The API must be stopped. The report is saved to `eval/results/` (not in git).
