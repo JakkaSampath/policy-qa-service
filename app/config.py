@@ -24,9 +24,9 @@ class Settings(BaseSettings):
 
     # Abuse protection
     max_question_chars: int = 500
-    llm_timeout_s: float = 30.0
+    llm_timeout_s: float = 60.0      # laptop CPU: ~11-18 s per answer
     llm_max_tokens: int = 300
-    max_concurrent_llm: int = 2
+    max_concurrent_llm: int = 1      # answers at once; extra requests get 503 busy
     rate_limit_per_min: int = 10
     cache_size: int = 256
 

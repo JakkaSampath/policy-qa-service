@@ -1,6 +1,7 @@
 """Vector store: embeds chunks with Ollama and searches them in Qdrant (local mode)."""
 from __future__ import annotations
 
+import threading
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -83,16 +84,19 @@ class VectorStore:
     """Qdrant in local mode: plain Python, saves to a folder, no server.
 
     Only one VectorStore may have the folder open at a time; call close()
-    (or use `with VectorStore(...) as store:`) when done.
+    (or use `with VectorStore(...) as store:`) when done. Safe to share
+    between threads (the API calls it from worker threads).
     """
 
     def __init__(self, embedder: Embedder, path: Path, collection: str):
         self.embedder = embedder
         self._name = collection
         self._client = QdrantClient(path=str(path))
+        self._lock = threading.RLock()  # Qdrant local mode isn't thread-safe
 
     def close(self) -> None:
-        self._client.close()
+        with self._lock:
+            self._client.close()
 
     def __enter__(self) -> "VectorStore":
         return self
@@ -104,6 +108,10 @@ class VectorStore:
         """Replace the whole index with these chunks. Safe to run repeatedly."""
         # Embed first: if Ollama fails here, the existing index is untouched.
         vectors = self.embedder.embed_documents([c.embed_text for c in chunks]) if chunks else []
+        with self._lock:
+            return self._replace(chunks, vectors)
+
+    def _replace(self, chunks: list[Chunk], vectors: list[list[float]]) -> int:
         if self._client.collection_exists(self._name):
             self._client.delete_collection(self._name)
         if not chunks:
@@ -126,16 +134,18 @@ class VectorStore:
         return self.count()
 
     def count(self) -> int:
-        if not self._client.collection_exists(self._name):
-            return 0
-        return self._client.count(self._name).count
+        with self._lock:
+            if not self._client.collection_exists(self._name):
+                return 0
+            return self._client.count(self._name).count
 
     def built_with(self) -> str | None:
         """Embedding model the current index was built with (None if empty)."""
-        if self.count() == 0:
-            return None
-        points, _ = self._client.scroll(self._name, limit=1, with_payload=["embed_model"])
-        return points[0].payload.get("embed_model")
+        with self._lock:
+            if self.count() == 0:
+                return None
+            points, _ = self._client.scroll(self._name, limit=1, with_payload=["embed_model"])
+            return points[0].payload.get("embed_model")
 
     def search(self, question: str, k: int) -> list[Hit]:
         """Top-k most similar chunks, best first. Empty index -> []."""
@@ -146,10 +156,11 @@ class VectorStore:
             raise IndexMismatchError(
                 f"Index was built with '{built}' but EMBED_MODEL is "
                 f"'{self.embedder.model}'. Run: python scripts/ingest.py")
-        points = self._client.query_points(
-            self._name, query=self.embedder.embed_query(question),
-            limit=k, with_payload=True,
-        ).points
+        vector = self.embedder.embed_query(question)  # Ollama call: outside the lock
+        with self._lock:
+            points = self._client.query_points(
+                self._name, query=vector, limit=k, with_payload=True,
+            ).points
         return [
             Hit(Chunk(p.payload["chunk_id"], p.payload["file"], p.payload["title"],
                       p.payload["section"], p.payload["text"]), round(p.score, 4))
