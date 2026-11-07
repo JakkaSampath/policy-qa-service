@@ -102,10 +102,10 @@ Ollama is local and free, so abuse threatens the laptop's CPU/GPU rather than a 
 
 | Risk | Protection |
 |---|---|
-| Huge input | Max question length of 500 characters |
+| Huge input | Body over ~2.5 KB rejected with `413` before it's read; question max 500 characters (`422`) |
 | Spam | Rate limit per IP (for example 10 requests per minute) |
-| CPU overload | At most 2 concurrent LLM calls; reply `503` when full |
-| Slow or hung LLM | 30-second timeout |
+| CPU overload | 1 answer at a time (`MAX_CONCURRENT_LLM`); extra requests get `503` + `Retry-After: 5`, not queued |
+| Slow or hung Ollama | 60-second LLM timeout (`504`), 60-second embedding timeout; documents embedded in batches of 16 |
 | Long output | `num_predict` cap of about 300 tokens |
 | Repeated questions | Cache answers in memory, keyed by the normalized question |
 | Prompt injection ("ignore instructions…") | System prompt plus the citation check; the eval includes injection cases |
@@ -157,9 +157,17 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 2 | Chunking + tests | ✅ Done: 54 chunks, 10 tests |
 | 3 | Vector store (Qdrant) + ingest script + tests | ✅ Done: laptop ingest indexed 54 chunks; **31/31 tests pass on the laptop** (incl. real-Ollama integration) |
 | 4 | LLM, prompt, QA logic + tests | ✅ Done: 54/54 tests pass on the laptop (incl. 3 real-Ollama); `scripts/ask.py` answers and refuses correctly |
-| 5 | FastAPI + guards + API tests | All status codes are tested |
+| 5 | FastAPI + guards + API tests | ✅ Done: **91/91 tests pass on the laptop**; real API checked (`/health` ok, answer in 27.7 s, repeat served from cache) |
 | 6 | Eval set + runner | Eval report prints the metrics; threshold is tuned |
 | 7 | README (tester handbook) + Docker Compose | A tester can run it from the README alone |
+
+### Step 5 notes
+- Run: `.venv/Scripts/uvicorn app.main:app --host 127.0.0.1 --port 8000` (Linux/macOS: `.venv/bin/uvicorn`). Try it at `http://127.0.0.1:8000/docs`.
+- **1 server process only** (uvicorn's default): the rate limit and cache are in memory, and the index allows one process. Stop the API before running ingest or the tests.
+- Order of checks on `POST /ask`: body size (`413`) → rate limit per IP (`429`) → input (`422`) → cache → answer slot (`503` busy) → index (`503`) → answer (`503` Ollama down, `504` timeout).
+- Refusals are cached (asking the same out-of-scope question again is free); errors never are.
+- Known limits: the rate limit is per IP (behind a proxy everyone shares one); a request without `Content-Length` skips the body-size check (the 500-character limit still applies).
+- Seen in the laptop check: the answer "**Full-time** employees are entitled to 10 days of paid sick leave" cited only *Sick Leave*, but "full-time" comes from *Annual Leave*. Step 6 should catch facts that aren't in the cited section.
 
 ### Step 4 notes
 - Sources are sent to gemma3 labelled S1, S2, …; it must reply in a fixed JSON shape (Ollama structured output) and cite labels. Citations are verified against the labels given; leftover labels in the answer text are removed.
@@ -175,7 +183,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 ## 13. Known risks / open items
 - **Threshold (first `embeddinggemma-2` numbers, laptop, 4 questions):** answerable 0.817–0.834; unanswerable 0.591 (cafeteria) and 0.680 (dress code). At the 0.5 placeholder, both unanswerable questions reached gemma3 and were refused by the model (`model_refused`, ~13 s each). A threshold around 0.70 would refuse them instantly. Tune in step 6 with the full question set.
 - **Near misses get past the threshold.** "What is the dress code?" scored close to answerable questions (it sounds like the Code of Conduct), so the LLM has to refuse it. That's covered by layers 2–3 and by the eval.
-- **Speed (laptop):** 11–18 s per answered question, ~13 s per model refusal; the full test suite takes ~83 s. That's under the 30-second timeout for one request at a time; concurrent requests will be slower, so step 5's concurrency limit (2) and `503 busy` response matter.
+- **Speed (laptop):** 11–18 s per answered question, ~13 s per model refusal; the full test suite takes ~83 s. A first answer after a model load took 27.7 s through the API, which is why the timeouts are 60 s and only 1 answer runs at a time (a GPU machine can raise both in `.env`).
 - **A small model can be sloppy with JSON or citations.** The parser and citation check handle this, and the eval will show how often it happens.
 - **Store calls are blocking.** Step 5 must run them in a thread pool so one slow call doesn't freeze the API.
 - **Rebuild isn't atomic.** It deletes the index, then re-adds everything (see the step 3 notes).
