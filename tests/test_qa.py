@@ -113,7 +113,7 @@ def test_llm_errors_are_not_swallowed(indexed):
 
 @pytest.fixture
 def real_store(tmp_path, chunks):
-    with VectorStore(OllamaEmbedder(settings.ollama_url, settings.embed_model),
+    with VectorStore(OllamaEmbedder(settings.ollama_url, settings.embed_model, settings.embed_timeout_s),
                      tmp_path, "it-qa") as s:
         s.rebuild(chunks)
         yield s

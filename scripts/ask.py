@@ -16,7 +16,7 @@ def main() -> int:
         print('Usage: python scripts/ask.py "your question"', file=sys.stderr)
         return 2
     question = " ".join(sys.argv[1:])
-    embedder = OllamaEmbedder(settings.ollama_url, settings.embed_model)
+    embedder = OllamaEmbedder(settings.ollama_url, settings.embed_model, settings.embed_timeout_s)
     llm = OllamaLLM(settings.ollama_url, settings.llm_model,
                     settings.llm_timeout_s, settings.llm_max_tokens)
 

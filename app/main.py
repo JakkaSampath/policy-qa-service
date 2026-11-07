@@ -70,7 +70,7 @@ def create_app(cfg: Settings = default_settings, *, store: VectorStore | None = 
     async def lifespan(app: FastAPI):
         owns_store = store is None
         app.state.store = store or VectorStore(
-            OllamaEmbedder(cfg.ollama_url, cfg.embed_model), cfg.index_dir, cfg.collection)
+            OllamaEmbedder(cfg.ollama_url, cfg.embed_model, cfg.embed_timeout_s), cfg.index_dir, cfg.collection)
         app.state.llm = llm or OllamaLLM(
             cfg.ollama_url, cfg.llm_model, cfg.llm_timeout_s, cfg.llm_max_tokens)
         try:

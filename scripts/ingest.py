@@ -23,7 +23,7 @@ def main() -> int:
         return fail(f"{e}\nCheck DOCS_DIR in .env.")
     print(f"Loaded {len(chunks)} chunks from {settings.docs_dir}")
 
-    embedder = OllamaEmbedder(settings.ollama_url, settings.embed_model)
+    embedder = OllamaEmbedder(settings.ollama_url, settings.embed_model, settings.embed_timeout_s)
     try:
         store = VectorStore(embedder, settings.index_dir, settings.collection)
     except RuntimeError as e:  # folder locked by another process (e.g. the running API)

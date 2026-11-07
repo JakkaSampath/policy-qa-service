@@ -100,9 +100,23 @@ def test_search_refuses_index_built_with_other_model(tmp_path, fake_embedder, ch
 
 # ---- Ollama client (mocked HTTP) ----
 
-def make_embedder(handler, model="embeddinggemma-2") -> OllamaEmbedder:
+def make_embedder(handler, model="embeddinggemma-2", batch_size=16) -> OllamaEmbedder:
     client = httpx.Client(base_url="http://ollama", transport=httpx.MockTransport(handler))
-    return OllamaEmbedder("http://ollama", model, client=client)
+    return OllamaEmbedder("http://ollama", model, client=client, batch_size=batch_size)
+
+
+def test_documents_are_embedded_in_batches_in_order():
+    batches = []
+
+    def handler(request):
+        texts = json.loads(request.content)["input"]
+        batches.append(len(texts))
+        # vector = the text's number, so order can be checked
+        return httpx.Response(200, json={"embeddings": [[float(t.split()[-1])] for t in texts]})
+
+    vectors = make_embedder(handler).embed_documents([f"doc {i}" for i in range(40)])
+    assert batches == [16, 16, 8]
+    assert vectors == [[float(i)] for i in range(40)]
 
 
 @pytest.mark.parametrize("model, query_input, doc_inputs", [
@@ -144,7 +158,8 @@ def test_ollama_failures_become_embedding_error(handler):
 
 @pytest.mark.integration
 def test_real_ollama_finds_mileage_section(tmp_path, chunks):
-    with VectorStore(OllamaEmbedder(settings.ollama_url, settings.embed_model),
+    with VectorStore(OllamaEmbedder(settings.ollama_url, settings.embed_model,
+                                    settings.embed_timeout_s),
                      tmp_path, "it-policies") as store:
         store.rebuild(chunks)
         top = store.search("How much do I get reimbursed per mile?", k=1)[0].chunk

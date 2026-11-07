@@ -43,11 +43,16 @@ def prefixes_for(model: str) -> tuple[str, str]:
 
 
 class OllamaEmbedder:
-    """Calls Ollama's /api/embed, adding the model's task prefixes."""
+    """Calls Ollama's /api/embed, adding the model's task prefixes.
 
-    def __init__(self, url: str, model: str, timeout_s: float = 10.0,
-                 client: httpx.Client | None = None):
+    Texts are sent in batches so no single request is large; the timeout is
+    generous because Ollama may first have to load the model into memory.
+    """
+
+    def __init__(self, url: str, model: str, timeout_s: float = 60.0,
+                 client: httpx.Client | None = None, batch_size: int = 16):
         self.model = model
+        self.batch_size = batch_size
         self._query_prefix, self._doc_prefix = prefixes_for(model)
         self._client = client or httpx.Client(base_url=url, timeout=timeout_s)
 
@@ -63,7 +68,11 @@ class OllamaEmbedder:
         return vectors
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        return self._embed([self._doc_prefix + t for t in texts])
+        inputs = [self._doc_prefix + t for t in texts]
+        vectors: list[list[float]] = []
+        for i in range(0, len(inputs), self.batch_size):
+            vectors.extend(self._embed(inputs[i:i + self.batch_size]))
+        return vectors
 
     def embed_query(self, text: str) -> list[float]:
         return self._embed([self._query_prefix + text])[0]
