@@ -88,6 +88,8 @@ Leave this window open. Stop it with `Ctrl+C`.
 
 Open a second Git Bash window to test it:
 
+**Or use the browser:** open http://127.0.0.1:8000/docs, click `POST /ask`, then **Try it out**, type a question and click **Execute**.
+
 **Health check** (should say `"status": "ok"`):
 ```bash
 curl http://127.0.0.1:8000/health
@@ -232,7 +234,7 @@ app/
   llm.py         the answer model (Ollama)
   qa.py          retrieve -> decide -> answer -> check citations
   guards.py      rate limit, one-at-a-time, answer cache
-  evaluation.py the quality scorer
+  evaluation.py  the quality scorer
   main.py        the API routes
 scripts/
   ingest.py      builds the index

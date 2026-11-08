@@ -60,13 +60,17 @@ policy-qa-service/
 │   ├── llm.py                # Ollama client, prompt, JSON parsing
 │   ├── qa.py                 # retrieve → decide → answer → verify
 │   ├── guards.py             # rate limit, concurrency, cache
+│   ├── evaluation.py         # eval scoring, threshold sweep, report
 │   └── main.py               # FastAPI routes
-├── scripts/ingest.py         # build the vector index
+├── scripts/
+│   ├── ingest.py             # build the vector index
+│   └── ask.py                # ask one question from the terminal
 ├── eval/
 │   ├── questions.jsonl       # 34 labeled questions
 │   └── run_eval.py           # scores quality
 ├── tests/                    # pytest (fake LLM + fake embeddings)
 ├── .env.example
+├── plan.md                   # this file
 └── README.md                 # tester handbook
 ```
 
@@ -79,17 +83,20 @@ policy-qa-service/
 // answered
 { "answered": true,
   "answer": "Up to 3 days per week with manager approval.",
-  "citations": [{"file": "remote-work-policy.md", "section": "Eligibility"}] }
+  "citations": [{"file": "remote-work-policy.md", "section": "Eligibility"}],
+  "reason": "answered", "top_similarity": 0.82, "cached": false }
 
 // refused
 { "answered": false,
   "answer": "I can't find this in the policy documents.",
-  "citations": [] }
+  "citations": [],
+  "reason": "no_relevant_docs", "top_similarity": 0.59, "cached": false }
 ```
+`reason` is one of `answered`, `no_relevant_docs`, `model_refused`, `bad_citation`, `bad_llm_output`.
 
 **`GET /health`**: reports the status of the app, Ollama and the index.
 
-**Errors:** `422` invalid input or question too long · `429` rate limited · `503` LLM busy, Ollama down, or index built with another model · `504` LLM timeout
+**Errors:** `413` request body too large · `422` invalid input or question too long · `429` rate limited · `503` LLM busy, Ollama down, index empty, or index built with another model · `504` LLM timeout
 
 ## 7. How refusal works (3 layers)
 1. **Retrieval gate:** if the closest chunk's similarity is below the threshold, refuse without calling the LLM.
@@ -115,21 +122,23 @@ Ollama is local and free, so abuse threatens the laptop's CPU/GPU rather than a 
 - **Integration tests (`integration` marker):** run against the real Ollama. They're auto-skipped, with the reason shown, when Ollama isn't reachable or a configured model is missing.
 
 ## 10. Measuring answer quality
-`eval/questions.jsonl` holds about 30 labeled cases:
-- about 18 answerable, each with the expected file and section, plus key facts the answer must contain
-- about 8 not covered (for example "What's the cafeteria menu?")
-- about 4 tricky ones: prompt injection, a question that mixes two policies, and near misses such as "What is the dress code?"
+`eval/questions.jsonl` holds 34 labeled cases:
+- 20 answerable, each with the expected file and section, key facts the answer must contain, and sometimes facts it must not contain
+- 7 not covered (for example "What's the cafeteria menu?")
+- 7 tricky ones: prompt injection, a fake "SYSTEM:" message, near misses ("What is the dress code?", part-time vacation), a question spanning two policies (VPN), arithmetic (100 miles) and a "not allowed" answer (keystroke tracking)
 
 `run_eval.py` reports:
 
 | Metric | Meaning |
 |---|---|
 | Refusal accuracy | Refuses when it should and answers when it should |
+| False answers | Answered a question the docs don't cover (worst error) |
+| Wrongly refused | Refused a question the docs do cover |
 | Citation accuracy | The cited file and section match the expected ones |
-| Answer correctness | The answer contains the expected key facts |
+| Answer correctness | The answer contains the expected key facts and none of the forbidden ones |
 | Latency | p50 and p95 |
 
-It also helps tune the similarity threshold.
+It also sweeps the similarity threshold (0.50–0.85) and recommends `MIN_SIMILARITY`. Results are in the step 6 notes.
 
 ## 11. Laptop setup
 ```bash
@@ -197,7 +206,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 - **Known limit (eval a18): near-identical metadata blocks.** Asked when the expense policy was last updated, gemma3 answers with the leave policy's date ("September 2026" instead of "July 2026") and cites the leave policy, although the search ranks the expense policy's "Document Info" first (0.857 vs 0.767). The header and prompt fixes in step 6 didn't change it. It's a wrong-citation error inside the docs, not an outside-knowledge answer. The eval keeps checking it, so a stronger model or a later fix can be measured against it.
 - **Threshold (first `embeddinggemma-2` numbers, laptop, 4 questions):** answerable 0.817–0.834; unanswerable 0.591 (cafeteria) and 0.680 (dress code). At the 0.5 placeholder, both unanswerable questions reached gemma3 and were refused by the model (`model_refused`, ~13 s each). A threshold around 0.70 would refuse them instantly. **Tuned in step 6: 0.625** (see the step 6 notes).
 - **Near misses get past the threshold.** "What is the dress code?" scored close to answerable questions (it sounds like the Code of Conduct), so the LLM has to refuse it. That's covered by layers 2–3 and by the eval.
-- **Speed (laptop):** 11–18 s per answered question, ~13 s per model refusal; the full test suite takes ~83 s. A first answer after a model load took 27.7 s through the API, which is why the timeouts are 60 s and only 1 answer runs at a time (a GPU machine can raise both in `.env`).
+- **Speed (laptop):** 11–18 s per answered question, ~13 s per model refusal; the full test suite takes ~83 s. A first answer after a model load took 27.7 s through the API, which is why only 1 answer runs at a time. The eval's slowest question took 55 s, so the LLM timeout is 90 s (embedding: 60 s). A GPU machine can change these in `.env`.
 - **A small model can be sloppy with JSON or citations.** The parser and citation check handle this, and the eval will show how often it happens.
-- **Store calls are blocking.** Step 5 must run them in a thread pool so one slow call doesn't freeze the API.
+- **Store calls are blocking.** The API runs them in a thread pool (`run_in_threadpool`), so one slow call doesn't freeze the API.
 - **Rebuild isn't atomic.** It deletes the index, then re-adds everything (see the step 3 notes).
