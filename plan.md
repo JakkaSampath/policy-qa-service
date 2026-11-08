@@ -158,7 +158,7 @@ If `python3 -m venv` fails on Ubuntu without sudo, use `python3 -m venv --withou
 | 4 | LLM, prompt, QA logic + tests | ✅ Done: 54/54 tests pass on the laptop (incl. 3 real-Ollama); `scripts/ask.py` answers and refuses correctly |
 | 5 | FastAPI + guards + API tests | ✅ Done: **91/91 tests pass on the laptop**; real API checked (`/health` ok, answer in 27.7 s, repeat served from cache) |
 | 6 | Eval set + runner | ✅ Done: **114/114 tests pass on the laptop**; eval 33/34, refusal accuracy 100%, **0 false answers**; `MIN_SIMILARITY=0.625` |
-| 7 | README (tester handbook) | 🔄 README written; a tester can run it from the README alone (to verify on the laptop) |
+| 7 | README (tester handbook) | ✅ Done: followed from a fresh clone on the laptop (setup, ingest 54 chunks, `ask.py`, `/health` ok, answer + refusal via the API); **114/114 tests pass** |
 
 ### Step 6 notes
 - `eval/questions.jsonl`: 34 labelled questions (20 answerable, 7 out of scope, 7 tricky). Run: `.venv/Scripts/python eval/run_eval.py` (`--ids a01,t03` for a few). The API must be stopped. The report is saved to `eval/results/` (not in git).
