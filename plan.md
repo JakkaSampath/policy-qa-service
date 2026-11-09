@@ -70,6 +70,7 @@ policy-qa-service/
 │   └── run_eval.py           # scores quality
 ├── tests/                    # pytest (fake LLM + fake embeddings)
 ├── .env.example
+├── CLAUDE.md                 # guidance for AI coding assistants
 ├── plan.md                   # this file
 └── README.md                 # tester handbook
 ```
